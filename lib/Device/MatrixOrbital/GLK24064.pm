@@ -8,6 +8,7 @@ package Device::MatrixOrbital::GLK24064;
 # njh@cpan.org
 #
 
+use Device::SerialPort;
 use strict;
 use Carp;
 
@@ -19,14 +20,27 @@ our $VERSION="0.01";
 
 sub new {
     my $class = shift;
-    my ($host, $adaptor) = @_;
+    my ($device, $rate) = @_;
 
 	# Create self
     my $self = {
-    	'port' => undef,
+    	'device' => $device || '/dev/ttyS0',
+    	'baud_rate' => $rate || 19200,
     };
     bless $self, $class;
 
+
+	# Create Serial Port and check for features
+	$self->{'serial'} = new Device::SerialPort( $self->{'device'} )
+	or die "Failed to create SerialPort object: $!";
+	
+	# Configure the Serial Port
+	$self->{'serial'}->baudrate($self->{'baud_rate'}) || die ("Failed to set baud rate");
+	$self->{'serial'}->parity("none") || die ("Failed to set parity");
+	$self->{'serial'}->databits(8) || die ("Failed to set data bits");
+	$self->{'serial'}->stopbits(1) || die ("Failed to set stop bits");
+	$self->{'serial'}->handshake("none") || die ("Failed to disable handshaking");
+	$self->{'serial'}->write_settings || die ("Failed to write settings");
 
 	return $self;
 }
@@ -64,6 +78,10 @@ sub new {
 sub DESTROY {
     my $self=shift;
     
+    if (defined $self->{'serial'}) {
+    	$self->{'serial'}->close || warn "Failed to close serial port.";
+    	undef $self->{'serial'};
+    }
 }
 
 
