@@ -1,4 +1,4 @@
-lib/Device/MatrixOrbital/GLK24064.pm
+lib/Device/MatrixOrbital/GLK.pm
 t/00use.t
 Changes
 MANIFEST

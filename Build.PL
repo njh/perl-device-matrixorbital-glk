@@ -2,7 +2,7 @@ use Module::Build;
 
 my $build = Module::Build->new
 (
-	module_name => 'Device::MatrixOrbital::GLK24064',
+	module_name => 'Device::MatrixOrbital::GLK',
 	license => 'perl',
 	build_requires => {
 		'Module::Build' => '0.20'

@@ -1,8 +1,8 @@
-package Device::MatrixOrbital::GLK24064;
+package Device::MatrixOrbital::GLK;
 
 ################
 #
-# Perl module for controling the Matrix Orbital GLK24064
+# Perl module for controling the Matrix Orbital graphic LCD displays
 #
 # Nicholas J Humfrey
 # njh@cpan.org
@@ -93,13 +93,13 @@ __END__
 
 =head1 NAME
 
-Device::MatrixOrbital::GLK24064
+Device::MatrixOrbital::GLK
 
 =head1 SYNOPSIS
 
-  use Device::MatrixOrbital::GLK24064;
+  use Device::MatrixOrbital::GLK;
 
-  my $lcd = new Device::MatrixOrbital::GLK24064();
+  my $lcd = new Device::MatrixOrbital::GLK();
 
 
   $lcd->close();
@@ -107,7 +107,7 @@ Device::MatrixOrbital::GLK24064
 
 =head1 DESCRIPTION
 
-Device::MatrixOrbital::GLK24064 blah blah blah
+Device::MatrixOrbital::GLK blah blah blah
 
 
 
