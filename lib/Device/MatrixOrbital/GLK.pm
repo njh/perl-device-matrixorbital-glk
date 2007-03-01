@@ -9,6 +9,7 @@ package Device::MatrixOrbital::GLK;
 #
 
 use Device::SerialPort;
+use Params::Util qw(_SCALAR _POSINT);
 use Time::HiRes qw(sleep alarm);
 use strict;
 use Carp;
@@ -23,7 +24,7 @@ sub new {
     my $class = shift;
     my $port = shift || '/dev/ttyS0';
     my $baudrate = shift || 19200;
-    my $timeout = shift || 5;
+    my $lcd_type = shift;
     
 
 	# Create self using super class
@@ -44,6 +45,16 @@ sub new {
 	die "write_done isn't available for serial port: $port"
 	unless ($self->can_write_done());
 	
+	# Check LCD type
+	$self->{'lcd_type'} = $lcd_type;
+	($self->{'lcd_width'}, $self->{'lcd_height'}) = $self->get_lcd_pixels();
+	
+	# Set a serial timeout default of 5 seconds
+	$self->{'timeout'} = 5;
+
+	$self->read_char_time(5);     # don't wait for each character
+	$self->read_const_time(100); # 1 second per unfulfilled "read" call
+
 
 	return $self;
 }
@@ -56,7 +67,7 @@ sub print {
 
 	eval {
 		local $SIG{ALRM} = sub { die "Timed out."; };
-		alarm(5);
+		alarm($self->{'timeout'});
 		
 		# Send it
 		$bytes = $self->write( $string );
@@ -83,14 +94,10 @@ sub printf {
 	$self->print( sprintf( @_ ) );
 }
 
-sub clear_screen {
-	my $self = shift;
-	$self->send_command( 0x58 );
-}
-
 sub backlight_on {
 	my $self = shift;
-	$self->send_command( 0x42, 0x00 );
+	my $min = $_[0] || 0;
+	$self->send_command( 0x42, $min );
 }
 
 sub backlight_off {
@@ -103,6 +110,18 @@ sub cursor_home {
 	$self->send_command( 0x48 );
 }
 
+sub set_contrast {
+	my $self = shift;
+	my ($value) = @_;
+	$self->send_command( 0x50, $value );
+}
+
+sub set_brightness {
+	my $self = shift;
+	my ($value) = @_;
+	$self->send_command( 0x99, $value );
+}
+
 sub autoscroll_on {
 	my $self = shift;
 	$self->send_command( 0x51 );
@@ -113,10 +132,21 @@ sub autoscroll_off {
 	$self->send_command( 0x52 );
 }
 
+sub clear_screen {
+	my $self = shift;
+	$self->send_command( 0x58 );
+}
+
 sub draw_bitmap {
 	my $self = shift;
 	my ($refid, $x, $y) = @_;
 	$self->send_command( 0x62, $refid, $x, $y );
+}
+
+sub draw_line_continue {
+	my $self = shift;
+	my ($x, $y) = @_;
+	$self->send_command( 0x65, $x, $y );
 }
 
 sub draw_line {
@@ -135,6 +165,78 @@ sub draw_rect {
 	my $self = shift;
 	my ($colour, $x1, $y1, $x2, $y2) = @_;
 	$self->send_command( 0x72, $colour, $x1, $y1, $x2, $y2 );
+}
+
+sub draw_solid_rect {
+	my $self = shift;
+	my ($colour, $x1, $y1, $x2, $y2) = @_;
+	$self->send_command( 0x78, $colour, $x1, $y1, $x2, $y2 );
+}
+
+sub get_lcd_type {
+	my $self = shift;
+	unless (defined $self->{'lcd_type'}) {
+		$self->send_command( 0x37 );
+		#$self->gets();
+		my ($bytes, $data) = $self->read(1);
+		printf("Got %d bytes back (0x%x).\n", $bytes, unpack('C',$data) );
+		my $value = unpack('C', $data);
+		if ($value==0x01) { $self->{'lcd_type'}='LCD0821' }
+		elsif ($value==0x15) { $self->{'lcd_type'}='GLK24064-25' }
+	}
+	
+	return $self->{'lcd_type'};
+}
+
+sub get_lcd_pixels {
+	my $self = shift;
+
+	# We need the LCD type first
+	my $lcd = $self->get_lcd_type();
+
+	if    ($lcd eq 'GLC12232') { return (240,64) }
+	elsif ($lcd eq 'GLC24064') { return (240,64) }
+	elsif ($lcd eq 'GLK24064-25') { return (240,64) }
+	elsif ($lcd eq 'GLC12232') { return (240,64) }
+	elsif ($lcd eq 'GLC12232') { return (240,64) }
+	elsif ($lcd eq 'GLC12232') { return (240,64) }
+	else {
+		warn "Unknown dimensions for LCD: $lcd";
+		return undef;
+	}
+}
+
+sub gets {
+	my $self = shift;
+
+	my $timeout = 5;
+	
+	$self->read_char_time(0);     # don't wait for each character
+	$self->read_const_time(1000); # 1 second per unfulfilled "read" call
+	
+	my $chars=0;
+	my $buffer="";
+	while ($timeout>0) {
+		my ($count,$saw)=$self->read(255); # will read _up to_ 255 chars
+		if ($count > 0) {
+			$chars+=$count;
+			$buffer.=$saw;
+			
+			# Check here to see if what we want is in the $buffer
+			# say "last" if we find it
+			$buffer=~s/([^\040-\176])/sprintf("{0x%02X}",ord($1))/ge;
+			print "saw ->$buffer<- ($chars)\n";
+			last;
+		}
+		else {
+			$timeout--;
+		}
+	}
+	
+	if ($timeout==0) {
+		warn "Waited $timeout seconds and never saw what I wanted\n";
+	}
+
 }
 
 sub send_command {
@@ -169,6 +271,9 @@ sub send_command {
 #get_pcb_version
 #get_pcb_type
 
+
+#sub _LCD_WIDTH
+#sub _LCD_HEIGHT
 
 #
 # Close the serial port

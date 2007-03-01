@@ -12,6 +12,7 @@ my $build = Module::Build->new
 		'Device::SerialPort' => 0,
 		'Time::HiRes' => 0,
 		'Test::More' => 0,
+		'Params::Util' => 0,
 	},
 	
 	create_makefile_pl => 'passthrough',
