@@ -111,16 +111,15 @@ sub set_autoscroll_off {
 	$self->send_command( 0x52 );
 }
 
+sub clear_screen {
+	my $self = shift;
+	$self->send_command( 0x58 );
+}
 
 sub set_drawing_color {
 	my $self = shift;
 	my ($color) = @_;
 	$self->send_command( 0x63, $color );
-}
-
-sub clear_screen {
-	my $self = shift;
-	$self->send_command( 0x58 );
 }
 
 sub draw_bitmap {
@@ -348,8 +347,7 @@ Device::MatrixOrbital::GLK - Control the GLK series of Matrix Orbital displays
 
   $lcd->clear_screen();
   $lcd->print("Hello World!");
-
-  $lcd->close();
+  $lcd->draw_line(0,32, 240,32);
 
 
 =head1 DESCRIPTION
@@ -386,10 +384,10 @@ Display a formatted string on the screen.
 
 =item B<backlight_on( $minutes )>
 
-This command turns the backlight on after the [minutes] timer has ex- 
-pired, with a one-hundred minute maximum timer. A time of 0 specifies 
-that the display should turn on immediately and stay on. When this com- 
-mand is sent while the remember function is on, the timer will reset and 
+This command turns the backlight on after the C<minutes> timer has expired, 
+with a one-hundred minute maximum timer. A time of 0 specifies that the 
+display should turn on immediately and stay on. When this command is 
+sent while the remember function is on, the timer will reset and 
 begin after power up.
 
 
@@ -447,17 +445,17 @@ followed by a C<cursor_home()> command may be used to erase the top line of
 text.
 
 
+=item B<clear_screen()>
+
+This command clears the display and resets the text insertion position to 
+the top left position of the screen defined in the font metrics. 
+
+
 =item B<set_drawing_color( $color )>
 
 This command sets the drawing color for subsequent graphic commands 
 that do not have the drawing color passed as a parameter. The parameter 
 C<$color> is the value of the color where white is 0 and black is 1-255.
-
-
-=item B<clear_screen()>
-
-This command clears the display and resets the text insertion position to 
-the top left position of the screen defined in the font metrics. 
 
 
 =item B<draw_bitmap( $refid, $x, $y)>
