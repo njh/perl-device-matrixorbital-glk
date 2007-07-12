@@ -1,5 +1,6 @@
 lib/Device/MatrixOrbital/GLK.pm
 t/00use.t
+t/05testpod.t
 Changes
 MANIFEST
 README
