@@ -56,10 +56,6 @@ sub new {
 		$self->{'lcd_type'} = $self->get_lcd_type();
 	}
 	
-	# Lookup the number of pixels on the display
-	($self->{'lcd_width'}, $self->{'lcd_height'}) = $self->get_lcd_pixels();
-
-
 	return $self;
 }
 
@@ -105,12 +101,12 @@ sub set_and_save_brightness {
 	$self->send_command( 0x98, $value );
 }
 
-sub autoscroll_on {
+sub set_autoscroll_on {
 	my $self = shift;
 	$self->send_command( 0x51 );
 }
 
-sub autoscroll_off {
+sub set_autoscroll_off {
 	my $self = shift;
 	$self->send_command( 0x52 );
 }
@@ -133,10 +129,10 @@ sub draw_bitmap {
 	$self->send_command( 0x62, $refid, $x, $y );
 }
 
-sub draw_line_continue {
+sub draw_pixel {
 	my $self = shift;
 	my ($x, $y) = @_;
-	$self->send_command( 0x65, $x, $y );
+	$self->send_command( 0x70, $x, $y );
 }
 
 sub draw_line {
@@ -145,10 +141,10 @@ sub draw_line {
 	$self->send_command( 0x6C, $x1, $y1, $x2, $y2 );
 }
 
-sub draw_pixel {
+sub draw_line_continue {
 	my $self = shift;
 	my ($x, $y) = @_;
-	$self->send_command( 0x70, $x, $y );
+	$self->send_command( 0x65, $x, $y );
 }
 
 sub draw_rect {
@@ -225,7 +221,7 @@ sub get_lcd_type {
 	return $self->{'lcd_type'};
 }
 
-sub get_lcd_pixels {
+sub get_lcd_dimensions {
 	my $self = shift;
 
 	# We need the LCD type first
@@ -236,6 +232,7 @@ sub get_lcd_pixels {
 	elsif ($lcd eq 'GLK24064-25') { return (240,64) }
 	elsif ($lcd eq 'GLK12232-25-WBL') { return (122,32) }
 	elsif ($lcd eq 'GLK12232-25-SM') { return (122,32) }
+	elsif ($lcd eq 'GLK240128-25') { return (240,128) }
 	else {
 		warn "Unknown pixel dimensions for LCD: $lcd";
 		return undef;
@@ -341,7 +338,7 @@ __END__
 
 =head1 NAME
 
-Device::MatrixOrbital::GLK
+Device::MatrixOrbital::GLK - Control the GLK series Matrix Orbital displays
 
 =head1 SYNOPSIS
 
@@ -349,16 +346,193 @@ Device::MatrixOrbital::GLK
 
   my $lcd = new Device::MatrixOrbital::GLK();
 
+  $lcd->clear_screen();
+  $lcd->print("Hello World!");
 
   $lcd->close();
 
 
 =head1 DESCRIPTION
 
-Device::MatrixOrbital::GLK blah blah blah
+Device::MatrixOrbital::GLK is an object oriented perl module for controlling 
+the GLK serial of LCD screens made by Matrix Orbital.
+
+For more information about GLK series MatrixOrbital displays, please visit:
+L<http://www.matrixorbital.ca/products/glk_Series/>
+
+Please note that I am not an employee and have nothing to do with MatrixOrbital,
+other than being a happy customer.
+
+
+=head1 METHODS
+
+=over 4
+
+=item B<new( [$port], [$baudrate], [$lcdtype] )>
+
+Creates a new C<Device::MatrixOrbital::GLK> object. All of the parametes are 
+optional. The default port is '/dev/ttyS0', the default baud rate is 19200 and 
+by default the LCD screen type will be detected automatically.
+
+
+=item B<print( $string )>
+
+Display a string on the screen.
+
+=item B<printf( $format, @params )>
+
+Display a formatted string on the screen.
+
+
+=item B<backlight_on( $minutes )>
+
+This command turns the backlight on after the [minutes] timer has ex- 
+pired, with a one-hundred minute maximum timer. A time of 0 specifies 
+that the display should turn on immediately and stay on. When this com- 
+mand is sent while the remember function is on, the timer will reset and 
+begin after power up.
+
+
+=item B<backlight_off()>
+
+This command turns the backlight off immediately. The backlight will 
+remain off until a C<backlight_on()> command has been received.
+
+
+=item B<cursor_home()>
+
+This command moves the text insertion point to the top left of the display 
+area, based on the current font metrics.
+
+
+=item B<set_contrast( $contrast )>
+
+This command sets the display's contrast to C<$contrast>, where C<$contrast> 
+is a value between 0 to 255. Lower values cause 'on' elements in the display 
+area to appear lighter, while higher values cause 'on' elements to appear darker.
+
+
+=item B<set_and_save_contrast( $contrast )>
+
+Like the C<set_contrast()> method, only this command saves the C<$contrast>
+value so that it is not lost after power down.
+
+
+=item B<set_brightness( $brightness )>
+
+This command sets the backlight brightness according to C<$brightness>.
+
+
+=item B<set_and_save_brightness( $brightness )>
+
+Like the C<set_brightness()> method, only this command saves the C<$brightness>
+value so that it is not lost after power down.
+
+
+=item B<set_autoscroll_on()>
+
+When auto scrolling is on, it causes the display to shift the entire display's 
+contents up to make room for a new line of text when the text reaches 
+the end of the scroll row defined in the font metrics (the bottom right 
+character position).
+
+
+=item B<set_autoscroll_off()>
+
+When auto scrolling is disabled, text will wrap to the top left corner of 
+the display area when the text reaches the end of the scroll row defined in 
+the font metrics (the bottom right character position). Existing text in 
+the display area is not erased before new text is placed. A series of spaces 
+followed by a C<cursor_home()> command may be used to erase the top line of 
+text.
+
+
+=item B<set_drawing_color( $color )>
+
+This command sets the drawing color for subsequent graphic commands 
+that do not have the drawing color passed as a parameter. The parameter 
+C<$color> is the value of the color where white is 0 and black is 1-255.
+
+
+=item B<clear_screen()>
+
+This command clears the display and resets the text insertion position to 
+the top left position of the screen defined in the font metrics. 
+
+
+=item B<draw_bitmap( $refid, $x, $y)>
+
+This command will draw a bitmap that is located in the on board memory. 
+The bitmap is referenced by the bitmaps reference identification number, 
+which is established when the bitmap is uploaded to the display module. 
+The bitmap will be drawn beginning at the top left, from the specified 
+X,Y coordinates.
+
+
+=item B<draw_pixel( $x, $y)>
+
+This command will draw a pixel at C<$x>, C<$y> using the current drawing color.
+
+
+=item B<draw_line( $x1, $y1, $x2, $y2)>
+
+This command will draw a line from C<$x1>, C<$y1> to C<$x2>, C<$y2> using 
+the current drawing color. Lines may be drawn from any part of the display to any 
+other part. However, it may be important to note that the line may in- 
+terpolate differently right to left, or left to right. This means that a line 
+drawn in white from right to left may not fully erase the same line drawn 
+in black from left to right. 
+
+
+=item B<draw_line_continue( $x, $y)>
+
+This command will draw a line with the current drawing color from the 
+last line end (x2,y2) to C<$x>, C<$y>. This command uses the global 
+drawing color.
+
+
+=item B<draw_rect( $x1, $y1, $x2, $y2)>
+
+This command draws a rectangular box in the specified color.
+The top left corner is specified by C<$x1>, C<$y1> and the bottom right 
+corner by C<$x2>, C<$y2>.
+
+
+=item B<draw_solid_rect( $x1, $y1, $x2, $y2)>
+
+This command draws a solid rectangle in the specified color. 
+The top left corner is specified by C<$x1>, C<$y1> and the bottom right 
+corner by C<$x2>, C<$y2>. Since this command involves considerable processing 
+overhead, we strongly recommend the use of flow control, particularly if 
+the command is to be repeated frequently. 
+
+
+=item B<get_lcd_type()>
+
+Returns the model of the LCD module that you are communicating with
+(for example 'GLK24064-25'). 
+
+
+=item B<($width, $height) = get_lcd_dimensions()>
+
+Returns the dimensions (in pixels) of the LCD screen you are talking to 
+as an array, width followed by height.
+
+
+=item B<get_firmware_version()>
+
+Returns the firmware version of the LCD module that you are communicating with
+as a dotted integer (for example '5.4').
 
 
 
+=back
+
+=head1 SEE ALSO
+
+Manuals for the GLK and GLC Series of graphic LCD's:
+
+L<http://www.matrixorbital.ca/manuals/GLK_series/>
 
 =head1 AUTHOR
 

@@ -1,9 +1,8 @@
 Device::MatrixOrbital::GLK
 ==========================
 
-Device::MatrixOrbital::GLK is a perl module for controlling the GLK series of 
-MatrixOrbital displays.
-
+Device::MatrixOrbital::GLK is an object oriented perl module for controlling 
+the GLK serial of LCD screens made by Matrix Orbital.
 
 For more information about GLK series MatrixOrbital displays, please visit:
 http://www.matrixorbital.ca/products/glk_Series/
