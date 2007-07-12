@@ -338,7 +338,7 @@ __END__
 
 =head1 NAME
 
-Device::MatrixOrbital::GLK - Control the GLK series Matrix Orbital displays
+Device::MatrixOrbital::GLK - Control the GLK series of Matrix Orbital displays
 
 =head1 SYNOPSIS
 
