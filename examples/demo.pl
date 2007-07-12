@@ -1,7 +1,6 @@
 #!/usr/bin/perl
 #
 
-use lib "./lib";
 use strict;
 use warnings;
 use Time::HiRes qw( sleep );
@@ -49,3 +48,4 @@ foreach my $c (0...254) {
 
 
 $lcd->set_contrast(127);
+
