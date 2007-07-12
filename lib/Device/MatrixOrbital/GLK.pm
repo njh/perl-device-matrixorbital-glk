@@ -45,54 +45,25 @@ sub new {
 	die "write_done isn't available for serial port: $port"
 	unless ($self->can_write_done());
 	
-	# Check LCD type
-	$self->{'lcd_type'} = $lcd_type;
-	($self->{'lcd_width'}, $self->{'lcd_height'}) = $self->get_lcd_pixels();
-	
 	# Set a serial timeout default of 5 seconds
 	$self->{'timeout'} = 5;
 
-	$self->read_char_time(5);     # don't wait for each character
-	$self->read_const_time(100); # 1 second per unfulfilled "read" call
+
+	# Check LCD type
+	if (defined $lcd_type) {
+		$self->{'lcd_type'} = $lcd_type;
+	} else {
+		$self->{'lcd_type'} = $self->get_lcd_type();
+	}
+	
+	# Lookup the number of pixels on the display
+	($self->{'lcd_width'}, $self->{'lcd_height'}) = $self->get_lcd_pixels();
 
 
 	return $self;
 }
 
 
-sub print {
-	my $self = shift;
-	my ($string) = @_;
-	my $bytes = 0;
-
-	eval {
-		local $SIG{ALRM} = sub { die "Timed out."; };
-		alarm($self->{'timeout'});
-		
-		# Send it
-		$bytes = $self->write( $string );
-		
-		# Block until it is sent
-		while(($self->write_done(0))[0] == 0) {}
-		
-		alarm 0;
-	};
-	
-	if ($@) {
-		die unless $@ eq "Timed out.\n";   # propagate unexpected errors
-		# timed out
-		warn "Timed out while writing to serial port.\n";
- 	}	
-
-	return $bytes;
-}
-
-
-sub printf {
-	my $self = shift;
-	
-	$self->print( sprintf( @_ ) );
-}
 
 sub backlight_on {
 	my $self = shift;
@@ -116,10 +87,22 @@ sub set_contrast {
 	$self->send_command( 0x50, $value );
 }
 
+sub set_and_save_contrast {
+	my $self = shift;
+	my ($value) = @_;
+	$self->send_command( 0x91, $value );
+}
+
 sub set_brightness {
 	my $self = shift;
 	my ($value) = @_;
 	$self->send_command( 0x99, $value );
+}
+
+sub set_and_save_brightness {
+	my $self = shift;
+	my ($value) = @_;
+	$self->send_command( 0x98, $value );
 }
 
 sub autoscroll_on {
@@ -130,6 +113,13 @@ sub autoscroll_on {
 sub autoscroll_off {
 	my $self = shift;
 	$self->send_command( 0x52 );
+}
+
+
+sub set_drawing_color {
+	my $self = shift;
+	my ($color) = @_;
+	$self->send_command( 0x63, $color );
 }
 
 sub clear_screen {
@@ -177,12 +167,59 @@ sub get_lcd_type {
 	my $self = shift;
 	unless (defined $self->{'lcd_type'}) {
 		$self->send_command( 0x37 );
-		#$self->gets();
-		my ($bytes, $data) = $self->read(1);
-		printf("Got %d bytes back (0x%x).\n", $bytes, unpack('C',$data) );
-		my $value = unpack('C', $data);
+
+		my $value = $self->getchar();
+		unless (defined $value) {
+			warn "Failed to read single byte from LCD screen";
+			return undef;
+		}
+		
 		if ($value==0x01) { $self->{'lcd_type'}='LCD0821' }
+		elsif ($value==0x02) { $self->{'lcd_type'}='LCD2021' }
+		elsif ($value==0x05) { $self->{'lcd_type'}='LCD2041' }
+		elsif ($value==0x06) { $self->{'lcd_type'}='LCD4021' }
+		elsif ($value==0x07) { $self->{'lcd_type'}='LCD4041' }
+		elsif ($value==0x08) { $self->{'lcd_type'}='LK202-25' }
+		elsif ($value==0x09) { $self->{'lcd_type'}='LK204-25' }
+		elsif ($value==0x0A) { $self->{'lcd_type'}='LK404-55' }
+		elsif ($value==0x0B) { $self->{'lcd_type'}='VFD2021' }
+		elsif ($value==0x0C) { $self->{'lcd_type'}='VFD2041' }
+		elsif ($value==0x0D) { $self->{'lcd_type'}='VFD4021' }
+		elsif ($value==0x0E) { $self->{'lcd_type'}='VK202-25' }
+		elsif ($value==0x0F) { $self->{'lcd_type'}='VK204-25' }
+		elsif ($value==0x10) { $self->{'lcd_type'}='GLC12232' }
+		elsif ($value==0x13) { $self->{'lcd_type'}='GLC24064' }
 		elsif ($value==0x15) { $self->{'lcd_type'}='GLK24064-25' }
+		elsif ($value==0x22) { $self->{'lcd_type'}='GLK12232-25-WBL' }
+		elsif ($value==0x24) { $self->{'lcd_type'}='GLK12232-25-SM' }
+		elsif ($value==0x31) { $self->{'lcd_type'}='LK404-AT' }
+		elsif ($value==0x32) { $self->{'lcd_type'}='MOS-AV-162A' }
+		elsif ($value==0x33) { $self->{'lcd_type'}='LK402-12' }
+		elsif ($value==0x34) { $self->{'lcd_type'}='LK162-12' }
+		elsif ($value==0x35) { $self->{'lcd_type'}='LK204-25PC' }
+		elsif ($value==0x36) { $self->{'lcd_type'}='LK202-24-USB' }
+		elsif ($value==0x37) { $self->{'lcd_type'}='VK202-24-USB' }
+		elsif ($value==0x38) { $self->{'lcd_type'}='LK204-24-USB' }
+		elsif ($value==0x39) { $self->{'lcd_type'}='VK204-24-USB' }
+		elsif ($value==0x3A) { $self->{'lcd_type'}='PK162-12' }
+		elsif ($value==0x3B) { $self->{'lcd_type'}='VK162-12' }
+		elsif ($value==0x3C) { $self->{'lcd_type'}='MOS-AP-162A' }
+		elsif ($value==0x3D) { $self->{'lcd_type'}='PK202-25' }
+		elsif ($value==0x3E) { $self->{'lcd_type'}='MOS-AL-162A' }
+		elsif ($value==0x40) { $self->{'lcd_type'}='MOS-AV-202A' }
+		elsif ($value==0x41) { $self->{'lcd_type'}='MOS-AP-202A' }
+		elsif ($value==0x42) { $self->{'lcd_type'}='PK202-24-USB' }
+		elsif ($value==0x43) { $self->{'lcd_type'}='MOS-AL-082' }
+		elsif ($value==0x44) { $self->{'lcd_type'}='MOS-AL-204' }
+		elsif ($value==0x45) { $self->{'lcd_type'}='MOS-AV-204' }
+		elsif ($value==0x46) { $self->{'lcd_type'}='MOS-AL-402' }
+		elsif ($value==0x47) { $self->{'lcd_type'}='MOS-AV-402' }
+		elsif ($value==0x48) { $self->{'lcd_type'}='LK082-12' }
+		elsif ($value==0x49) { $self->{'lcd_type'}='VK402-12' }
+		elsif ($value==0x4A) { $self->{'lcd_type'}='VK404-55' }
+		elsif ($value==0x4B) { $self->{'lcd_type'}='LK402-25' }
+		elsif ($value==0x4C) { $self->{'lcd_type'}='VK402-25' }
+		else { printf STDERR ("Unknown/unsupported LCD type 0x%x", $value); }
 	}
 	
 	return $self->{'lcd_type'};
@@ -194,90 +231,98 @@ sub get_lcd_pixels {
 	# We need the LCD type first
 	my $lcd = $self->get_lcd_type();
 
-	if    ($lcd eq 'GLC12232') { return (240,64) }
+	if    ($lcd eq 'GLC12232') { return (122,32) }
 	elsif ($lcd eq 'GLC24064') { return (240,64) }
 	elsif ($lcd eq 'GLK24064-25') { return (240,64) }
-	elsif ($lcd eq 'GLC12232') { return (240,64) }
-	elsif ($lcd eq 'GLC12232') { return (240,64) }
-	elsif ($lcd eq 'GLC12232') { return (240,64) }
+	elsif ($lcd eq 'GLK12232-25-WBL') { return (122,32) }
+	elsif ($lcd eq 'GLK12232-25-SM') { return (122,32) }
 	else {
-		warn "Unknown dimensions for LCD: $lcd";
+		warn "Unknown pixel dimensions for LCD: $lcd";
 		return undef;
 	}
 }
 
-sub gets {
+sub get_firmware_version {
 	my $self = shift;
+	unless (defined $self->{'firmware_version'}) {
+		$self->send_command( 0x36 );
 
-	my $timeout = 5;
-	
-	$self->read_char_time(0);     # don't wait for each character
-	$self->read_const_time(1000); # 1 second per unfulfilled "read" call
-	
-	my $chars=0;
-	my $buffer="";
-	while ($timeout>0) {
-		my ($count,$saw)=$self->read(255); # will read _up to_ 255 chars
-		if ($count > 0) {
-			$chars+=$count;
-			$buffer.=$saw;
-			
-			# Check here to see if what we want is in the $buffer
-			# say "last" if we find it
-			$buffer=~s/([^\040-\176])/sprintf("{0x%02X}",ord($1))/ge;
-			print "saw ->$buffer<- ($chars)\n";
-			last;
-		}
-		else {
-			$timeout--;
-		}
+		my $value = sprintf("%2.2x", $self->getchar() );
+		my ($major, $minor) = ($value =~ /(\w{1})(\w{1})/);
+		$self->{'firmware_version'} = "$major.$minor";
 	}
 	
-	if ($timeout==0) {
-		warn "Waited $timeout seconds and never saw what I wanted\n";
-	}
-
+	return $self->{'firmware_version'};
 }
 
+
+
+#### --------------------------------------------------------- ####
+
+
+
+## Send a command to the display
 sub send_command {
 	my $self = shift;
 	$self->print( pack( 'C*', 0xFE, @_ ) );
 }
 
 
-#printf(string)
-#cursor_home()
-#cursor_set_pos(col,row)
-#cursor_set_coord(x,y)
-#autoscroll_on()
-#autoscroll_off()
+## Send a string to the display
+sub print {
+	my $self = shift;
+	my ($string) = @_;
+	my $bytes = 0;
 
-#set_colour( colour )
-#draw_pixel( x,y )
-#draw_line( x1, y1, x2, y2 )
-#draw_line_continue( x, y )
-#draw_rect( x1, y1, x2, y2 )
-#draw_solid_rect( x1, y1, x2, y2 )
+	eval {
+		local $SIG{ALRM} = sub { die "Timed out."; };
+		alarm($self->{'timeout'});
+		
+		# Send it
+		$bytes = $self->write( $string );
+		
+		# Block until it is sent
+		while(($self->write_done(0))[0] == 0) {}
+		
+		alarm 0;
+	};
+	
+	if ($@) {
+		die unless $@ eq "Timed out.\n";   # propagate unexpected errors
+		# timed out
+		warn "Timed out while writing to serial port.\n";
+ 	}	
 
-#clear_screen()
-#backlight_on()
-#backlight_off()
-#set_backlight_brightness(brightness)
-#default_backlight_brightness(brightness)
-#set_contrast(brightness)
-#default_contrast(brightness)
+	return $bytes;
+}
 
 
-#get_pcb_version
-#get_pcb_type
+## Send a formatted string to the display
+sub printf {
+	my $self = shift;
+	
+	$self->print( sprintf( @_ ) );
+}
 
 
-#sub _LCD_WIDTH
-#sub _LCD_HEIGHT
+## Read a single byte from the serial port and return it as an integer
+sub getchar {
+	my $self = shift;
 
-#
-# Close the serial port
-#
+	# don't wait for each character
+	$self->read_char_time(0);
+	
+	# milliseconds per unfulfilled "read" call
+	$self->read_const_time($self->{'timeout'}*1000);
+
+	# Read one charater
+	my ($count,$data) = $self->read(1);
+	return undef if ($count<1);
+	return unpack('C',$data);
+}
+
+
+## Close the serial port
 sub DESTROY {
     my $self=shift;
     

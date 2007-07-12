@@ -13,7 +13,30 @@ other than being a happy customer.
 
 
 
-IMPLEMENTED COMMANDS
+INSTALLATION
+
+	I use Module::Build to build and install this module.
+	To install this module type the following:
+	
+		perl Build.PL
+		./Build
+		./Build test
+		
+	And then as root:
+	
+		./Build install
+
+	Module::Build is available in the debian package:
+
+		libmodule-build-perl
+
+
+
+IMPLEMENTED OPERATIONS
+
+There is only a limit number of operations implemented in this release of the 
+perl module.  Additional operations will be implemented in future releases.
+
 
   No    0x21   Wipe Filesystem
   No    0x24   Upload a Font File
@@ -21,8 +44,8 @@ IMPLEMENTED COMMANDS
   No    0x31   Set the Current Font
   No    0x32   Font Metrics
   No    0x33   Change the I2C Slave Address
-  No    0x36   Read Version Number
-  No    0x37   Read Module Type
+  Yes   0x36   Read Version Number
+  Yes   0x37   Read Module Type
   No    0x39   Change the Baud Rate
   No    0x3A   Turn Flow Control On
   No    0x3B   Turn Flow Control Off
@@ -67,24 +90,6 @@ IMPLEMENTED COMMANDS
   No    0xB4   Move a File
   No    0xCA   Data Lock
 
-  
-  
-INSTALLATION
-
-	I use Module::Build to build and install this module.
-	To install this module type the following:
-	
-		perl Build.PL
-		./Build
-		./Build test
-		
-	And then as root:
-	
-		./Build install
-
-	Module::Build is available in the debian package:
-
-		libmodule-build-perl
 
 
 AUTHOR
