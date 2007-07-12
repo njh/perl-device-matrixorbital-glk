@@ -1,12 +1,15 @@
-Net::DVBStreamer::Client
-========================
+Device::MatrixOrbital::GLK
+==========================
 
-Net::DVBStreamer::Client is a perl module for talking to DVBStreamer servers.
+Device::MatrixOrbital::GLK is a perl module for controlling the GLK series of 
+MatrixOrbital displays.
 
 
+For more information about GLK series MatrixOrbital displays, please visit:
+http://www.matrixorbital.ca/products/glk_Series/
 
-For more information about DVBStreamer visit its homepage:
-http://dvbstreamer.sourceforge.net/
+Please note that I am not an employee and have nothing to do with MatrixOrbital,
+other than being a happy customer.
 
 
 
