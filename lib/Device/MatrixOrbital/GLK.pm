@@ -8,14 +8,14 @@ package Device::MatrixOrbital::GLK;
 # njh@cpan.org
 #
 
-use Device::SerialPort;
-use Params::Util qw(_SCALAR _POSINT);
 use Time::HiRes qw(sleep alarm);
+use POSIX qw(:termios_h);
+use IO::File;
 use strict;
 use Carp;
 
 use vars qw/$VERSION @ISA/;
-@ISA = "Device::SerialPort";
+@ISA = qw/IO::File/;
 $VERSION="0.02";
 
 
@@ -27,27 +27,32 @@ sub new {
     my $lcd_type = shift;
     
 
+    # Bless self hashref into an object
+	my $self = {};
+    bless $self, $class;
+
+
 	# Create self using super class
-	my $self = $class->SUPER::new( $port )
-	or die "Failed to create SerialPort object: $!";
+	$self->{'port'} = new IO::File( $port, 'r+' )
+	or croak "Failed to create IO::File object: $!";
+	
+	# Create new termios object
+	$self->{'termios'} = new POSIX::Termios();
 	
 	# Configure the Serial Port
-	$self->baudrate($baudrate) || die ("Failed to set baud rate");
-	$self->parity("none") || die ("Failed to set parity");
-	$self->databits(8) || die ("Failed to set data bits");
-	$self->stopbits(1) || die ("Failed to set stop bits");
-	$self->handshake("none") || die ("Failed to disable handshaking");
-	$self->write_settings || die ("Failed to write settings");
-
-	# Check for features
-	die "status isn't available for serial port: $port"
-	unless ($self->can_status());
-	die "write_done isn't available for serial port: $port"
-	unless ($self->can_write_done());
+	#$self->configure_serialport();
 	
-	# Set a serial timeout default of 5 seconds
-	$self->{'timeout'} = 5;
+	# Set the baud rate
+	$self->set_baudrate( $baudrate );
+	
 
+
+	
+	# Set a serial timeout default of 1 second
+	$self->{'timeout'} = 1000;
+	
+	# We don't support flow control - turn it off
+	$self->set_flow_control_off();
 
 	# Check LCD type
 	if (defined $lcd_type) {
@@ -56,18 +61,102 @@ sub new {
 		$self->{'lcd_type'} = $self->get_lcd_type();
 	}
 	
+	
+	
 	return $self;
 }
 
 
+sub configure_serialport {
+	my $self = shift;
+	my $termios = $self->{'termios'};
+	my $fileno = $self->{'port'}->fileno();
+	
+	## Serial settings, 8 data bits, 1 stop bit, no parity, no handshaking
+	$termios->getattr( $fileno ) || die "getattr: $!\n";
+	$termios->setcflag( 0x00 | &POSIX::CS8 | &POSIX::HUPCL | &POSIX::CREAD | &POSIX::CLOCAL);
+	$termios->setlflag( 0x00 );
+	$termios->setiflag( 0x00 | &POSIX::IGNBRK | &POSIX::IGNPAR );
+	$termios->setoflag( 0x00 );
+	$termios->setattr( $fileno, &POSIX::TCSANOW ) || die "getattr: $!\n";
+	
+    # Make reads wait up to 200ms for a character
+   # $termios->getattr($fileno) || die "getattr: $!\n";        
+    #$termios->setcc(VMIN,0);
+    #$termios->setcc(VTIME,1);
+    #$termios->setattr($fileno,TCSANOW) || die "setattr: $!\n";
+}
 
-sub backlight_on {
+sub set_baudrate {
+	my $self = shift;
+	my ($baudrate) = @_;
+	
+	# Lookup the POSIX symbol/value
+	my $brate = undef;
+	if ($baudrate==9600) { $brate=&POSIX::B9600; }
+	elsif ($baudrate==14400) { $brate=&POSIX::B14400; }
+	elsif ($baudrate==19200) { $brate=&POSIX::B19200; }
+	elsif ($baudrate==28800) { $brate=&POSIX::B28800; }
+	elsif ($baudrate==38400) { $brate=&POSIX::B38400; }
+	elsif ($baudrate==57600) { $brate=&POSIX::B57600; }
+	elsif ($baudrate==76800) { $brate=&POSIX::B76800; }
+	elsif ($baudrate==115200) { $brate=&POSIX::B115200; }
+	
+	if (defined $brate) {
+		# Apply the baud rate
+		my $termios = $self->{'termios'};
+		my $fileno = $self->{'port'}->fileno();
+		$termios->getattr( $fileno ) || die "getattr: $!\n";
+		$termios->setospeed( $brate ) || die "setospeed: $!";
+		$termios->setispeed( $brate ) || die "setispeed: $!";
+		$termios->setattr( $fileno, &POSIX::TCSANOW ) || die "getattr: $!\n";
+	} else {
+		croak "Invalid/unsupported baud rate: $baudrate";
+	}
+}
+
+sub set_i2c_slave_address {
+	my $self = shift;
+	my ($address) = @_;
+	carp "Missing I2C address value" unless (defined $address);
+	$self->send_command( 0x46, $address );
+}
+
+
+sub set_lcd_baudrate {
+	my $self = shift;
+	my ($baudrate) = @_;
+	carp "Missing baudrate value" unless (defined $baudrate);
+	
+	if ($baudrate==9600) { $self->send_command( 0x39, 0xCF ); }
+	elsif ($baudrate==14400) { $self->send_command( 0x39, 0x8A ); }
+	elsif ($baudrate==19200) { $self->send_command( 0x39, 0x67 ); }
+	elsif ($baudrate==28800) { $self->send_command( 0x39, 0x44 ); }
+	elsif ($baudrate==38400) { $self->send_command( 0x39, 0x33 ); }
+	elsif ($baudrate==57600) { $self->send_command( 0x39, 0x22 ); }
+	elsif ($baudrate==76800) { $self->send_command( 0x39, 0x19 ); }
+	elsif ($baudrate==115200) { $self->send_command( 0x39, 0x10 ); }
+	else { carp "Invalid/unsupported baud rate: $baudrate"; }
+}
+
+#sub set_flow_control_on {
+#	my $self = shift;
+#	$self->send_command( 0x3A );
+#}
+
+sub set_flow_control_off {
+	my $self = shift;
+	$self->send_command( 0x3B );
+}
+
+
+sub set_backlight_on {
 	my $self = shift;
 	my $min = $_[0] || 0;
 	$self->send_command( 0x42, $min );
 }
 
-sub backlight_off {
+sub set_backlight_off {
 	my $self = shift;
 	$self->send_command( 0x46 );
 }
@@ -79,26 +168,30 @@ sub cursor_home {
 
 sub set_contrast {
 	my $self = shift;
-	my ($value) = @_;
-	$self->send_command( 0x50, $value );
+	my ($contrast) = @_;
+	carp "Missing contrast value" unless (defined $contrast);
+	$self->send_command( 0x50, $contrast );
 }
 
 sub set_and_save_contrast {
 	my $self = shift;
-	my ($value) = @_;
-	$self->send_command( 0x91, $value );
+	my ($contrast) = @_;
+	carp "Missing contrast value" unless (defined $contrast);
+	$self->send_command( 0x91, $contrast );
 }
 
 sub set_brightness {
 	my $self = shift;
-	my ($value) = @_;
-	$self->send_command( 0x99, $value );
+	my ($brightness) = @_;
+	carp "Missing brightness value" unless (defined $brightness);
+	$self->send_command( 0x99, $brightness );
 }
 
 sub set_and_save_brightness {
 	my $self = shift;
-	my ($value) = @_;
-	$self->send_command( 0x98, $value );
+	my ($brightness) = @_;
+	carp "Missing brightness value" unless (defined $brightness);
+	$self->send_command( 0x98, $brightness );
 }
 
 sub set_autoscroll_on {
@@ -111,51 +204,128 @@ sub set_autoscroll_off {
 	$self->send_command( 0x52 );
 }
 
+
+sub set_drawing_color {
+	my $self = shift;
+	my ($color) = @_;
+	carp "Missing drawing colour" unless (defined $color);
+	$self->send_command( 0x63, $color );
+}
+
 sub clear_screen {
 	my $self = shift;
 	$self->send_command( 0x58 );
 }
 
-sub set_drawing_color {
-	my $self = shift;
-	my ($color) = @_;
-	$self->send_command( 0x63, $color );
-}
-
 sub draw_bitmap {
 	my $self = shift;
 	my ($refid, $x, $y) = @_;
+	carp "Missing reference ID" unless (defined $refid);
+	carp "Missing X value" unless (defined $x);
+	carp "Missing Y value" unless (defined $y);
 	$self->send_command( 0x62, $refid, $x, $y );
 }
 
 sub draw_pixel {
 	my $self = shift;
 	my ($x, $y) = @_;
+	carp "Missing X value" unless (defined $x);
+	carp "Missing Y value" unless (defined $y);
 	$self->send_command( 0x70, $x, $y );
 }
 
 sub draw_line {
 	my $self = shift;
 	my ($x1, $y1, $x2, $y2) = @_;
+	carp "Missing X1 value" unless (defined $x1);
+	carp "Missing Y1 value" unless (defined $y1);
+	carp "Missing X2 value" unless (defined $x2);
+	carp "Missing Y2 value" unless (defined $y2);
 	$self->send_command( 0x6C, $x1, $y1, $x2, $y2 );
 }
 
 sub draw_line_continue {
 	my $self = shift;
 	my ($x, $y) = @_;
+	carp "Missing X value" unless (defined $x);
+	carp "Missing Y value" unless (defined $y);
 	$self->send_command( 0x65, $x, $y );
 }
 
 sub draw_rect {
 	my $self = shift;
-	my ($colour, $x1, $y1, $x2, $y2) = @_;
-	$self->send_command( 0x72, $colour, $x1, $y1, $x2, $y2 );
+	my ($color, $x1, $y1, $x2, $y2) = @_;
+	carp "Missing color value" unless (defined $color);
+	carp "Missing X1 value" unless (defined $x1);
+	carp "Missing Y1 value" unless (defined $y1);
+	carp "Missing X2 value" unless (defined $x2);
+	carp "Missing Y2 value" unless (defined $y2);
+	$self->send_command( 0x72, $color, $x1, $y1, $x2, $y2 );
+}
+
+
+sub delete_bitmap {
+	my $self = shift;
+	my ($refid) = @_;
+	carp "Type of reference ID of bitmap to delete" unless (defined $refid);
+	$self->send_command( 0xFE, 0xAD, 0x01, $refid );
+}
+
+sub delete_font {
+	my $self = shift;
+	my ($refid) = @_;
+	carp "Type of reference ID of font to delete" unless (defined $refid);
+	$self->send_command( 0xFE, 0xAD, 0x00, $refid );
+}
+
+
+sub wipe_filesystem {
+	my $self = shift;
+	$self->send_command( 0xFE, 0x21, 0x59, 0x21 );
+}
+
+sub get_filesystem_space {
+	my $self = shift;
+	$self->send_command( 0xFE, 0xAF );
+
+	my $count = $self->getint();
+	
+	#$count |= ( & 0xFF) << 0;
+	#$count |= ($self->getchar() & 0xFF) << 8;
+	#$count |= ($self->getchar() & 0xFF) << 16;
+	#$count |= ($self->getchar() & 0xFF) << 24;
+	#
+	#return $count;
+}
+
+sub get_filesystem_directory {
+	my $self = shift;
+	$self->send_command( 0xFE, 0xB3 );
+
+	my $lsb = $self->getchar();
+	
+	#my @bytes = $self->getbytes( 4 );
+
+	#my $count = 0;
+	#$count |= (@bytes[0] & 0xFF) << 0;
+	#$count |= (@bytes[1] & 0xFF) << 8;
+	#$count |= (@bytes[2] & 0xFF) << 16;
+	#$count |= (@bytes[3] & 0xFF) << 24;
+	
+	#return $count;
+	
+	return $lsb;
 }
 
 sub draw_solid_rect {
 	my $self = shift;
-	my ($colour, $x1, $y1, $x2, $y2) = @_;
-	$self->send_command( 0x78, $colour, $x1, $y1, $x2, $y2 );
+	my ($color, $x1, $y1, $x2, $y2) = @_;
+	carp "Missing color value" unless (defined $color);
+	carp "Missing X1 value" unless (defined $x1);
+	carp "Missing Y1 value" unless (defined $y1);
+	carp "Missing X2 value" unless (defined $x2);
+	carp "Missing Y2 value" unless (defined $y2);
+	$self->send_command( 0x78, $color, $x1, $y1, $x2, $y2 );
 }
 
 sub get_lcd_type {
@@ -260,72 +430,81 @@ sub get_firmware_version {
 ## Send a command to the display
 sub send_command {
 	my $self = shift;
-	$self->print( pack( 'C*', 0xFE, @_ ) );
+	$self->{'port'}->print( pack( 'C*', 0xFE, @_ ) );
 }
 
 
 ## Send a string to the display
-sub print {
-	my $self = shift;
-	my ($string) = @_;
-	my $bytes = 0;
-
-	eval {
-		local $SIG{ALRM} = sub { die "Timed out."; };
-		alarm($self->{'timeout'});
-		
-		# Send it
-		$bytes = $self->write( $string );
-		
-		# Block until it is sent
-		while(($self->write_done(0))[0] == 0) {}
-		
-		alarm 0;
-	};
-	
-	if ($@) {
-		die unless $@ eq "Timed out.\n";   # propagate unexpected errors
-		# timed out
-		warn "Timed out while writing to serial port.\n";
- 	}	
-
-	return $bytes;
-}
+#sub print {
+#	my $self = shift;
+#	my ($string) = @_;
+# 	my $bytes = 0;
+# 
+# 	eval {
+# 		local $SIG{ALRM} = sub { die "Timed out."; };
+# 		alarm($self->{'timeout'}/1000);
+# 		
+# 		# Send it
+# 		$bytes = $self->write( $string );
+# 		
+# 		# Block until it is sent
+# 		while(($self->write_done(0))[0] == 0) {}
+# 		
+# 		alarm 0;
+# 	};
+# 	
+# 	if ($@) {
+# 		die unless $@ eq "Timed out.\n";   # propagate unexpected errors
+# 		# timed out
+# 		warn "Timed out while writing to serial port.\n";
+#  	}	
+# 
+# 	return $bytes;
+# }
 
 
 ## Send a formatted string to the display
-sub printf {
-	my $self = shift;
-	
-	$self->print( sprintf( @_ ) );
-}
+# sub printf {
+# 	my $self = shift;
+# 	
+# 	$self->print( sprintf( @_ ) );
+# }
 
 
 ## Read a single byte from the serial port and return it as an integer
 sub getchar {
 	my $self = shift;
 
-	# don't wait for each character
-	$self->read_char_time(0);
-	
-	# milliseconds per unfulfilled "read" call
-	$self->read_const_time($self->{'timeout'}*1000);
-
 	# Read one charater
-	my ($count,$data) = $self->read(1);
+	my $data = '';
+	my $count = $self->{'port'}->read($data, 1);
 	return undef if ($count<1);
 	return unpack('C',$data);
 }
+
+
+## Read an integer from the serial port
+sub getint {
+	my $self = shift;
+
+	# Read one charater
+	my $data = '';
+	my $count = $self->{'port'}->read($data, 4);
+	printf("Read $count bytes: 0x%x,0x%x,0x%x,0x%x\n", unpack("C*", $data) );
+	
+	#return undef if ($count<4);
+	return unpack('C*',$data);
+}
+
 
 
 ## Close the serial port
 sub DESTROY {
     my $self=shift;
     
-    if (defined $self->{'serial'}) {
-    	$self->{'serial'}->close || warn "Failed to close serial port.";
-    	undef $self->{'serial'};
-    }
+    undef $self->{'termios'};
+    
+    $self->close || warn "Failed to close serial port.";
 }
 
 
@@ -337,7 +516,7 @@ __END__
 
 =head1 NAME
 
-Device::MatrixOrbital::GLK - Control the GLK series of Matrix Orbital displays
+Device::MatrixOrbital::GLK - Control the GLK series Matrix Orbital displays
 
 =head1 SYNOPSIS
 
@@ -347,7 +526,8 @@ Device::MatrixOrbital::GLK - Control the GLK series of Matrix Orbital displays
 
   $lcd->clear_screen();
   $lcd->print("Hello World!");
-  $lcd->draw_line(0,32, 240,32);
+
+  $lcd->close();
 
 
 =head1 DESCRIPTION
@@ -382,19 +562,42 @@ Display a string on the screen.
 Display a formatted string on the screen.
 
 
-=item B<backlight_on( $minutes )>
+=item B<set_i2c_slave_address( $address )>
 
-This command turns the backlight on after the C<minutes> timer has expired, 
-with a one-hundred minute maximum timer. A time of 0 specifies that the 
-display should turn on immediately and stay on. When this command is 
-sent while the remember function is on, the timer will reset and 
+This command sets the I2C write address of the module between 0x00 
+and 0xFF. The I2C write address must be an even number and the read 
+address is automatically set to one higher. For example if the I2C write 
+address is set to 0x50, then the read address is 0x51. 
+
+
+=item B<set_lcd_baudrate( $speed )>
+
+This command sets the LCD;s RS-232 port to the specified C<$speed>. The 
+change takes place immediately. Valid baud rate are:
+
+ 9600
+ 14400
+ 19200
+ 28800
+ 38400
+ 57600
+ 76800
+ 115200
+
+
+=item B<set_backlight_on( $minutes )>
+
+This command turns the backlight on after the [minutes] timer has ex- 
+pired, with a one-hundred minute maximum timer. A time of 0 specifies 
+that the display should turn on immediately and stay on. When this com- 
+mand is sent while the remember function is on, the timer will reset and 
 begin after power up.
 
 
-=item B<backlight_off()>
+=item B<set_backlight_off()>
 
 This command turns the backlight off immediately. The backlight will 
-remain off until a C<backlight_on()> command has been received.
+remain off until a C<set_backlight_on()> command has been received.
 
 
 =item B<cursor_home()>
@@ -445,17 +648,17 @@ followed by a C<cursor_home()> command may be used to erase the top line of
 text.
 
 
-=item B<clear_screen()>
-
-This command clears the display and resets the text insertion position to 
-the top left position of the screen defined in the font metrics. 
-
-
 =item B<set_drawing_color( $color )>
 
 This command sets the drawing color for subsequent graphic commands 
 that do not have the drawing color passed as a parameter. The parameter 
 C<$color> is the value of the color where white is 0 and black is 1-255.
+
+
+=item B<clear_screen()>
+
+This command clears the display and resets the text insertion position to 
+the top left position of the screen defined in the font metrics. 
 
 
 =item B<draw_bitmap( $refid, $x, $y)>
@@ -494,6 +697,31 @@ drawing color.
 This command draws a rectangular box in the specified color.
 The top left corner is specified by C<$x1>, C<$y1> and the bottom right 
 corner by C<$x2>, C<$y2>.
+
+
+=item B<delete_bitmap( $refid )>
+
+This command deletes a single bitmap from the LCD's memory.
+The reference number is defined when the file is saved to the LCD.
+
+
+=item B<delete_font( $refid )>
+
+This command deletes a single font from the LCD's memory.
+The reference number is defined when the file is saved to the LCD.
+
+
+=item B<wipe_filesystem()>
+
+This command completely erases the display's non-volatile memory. It 
+removes all fonts, font metrics, bitmaps, and settings (current font, cursor 
+position, communication speed, etc.).
+
+
+=item B<get_filesystem_space()>
+
+This command will return how many bytes are remaining in the 
+16 KB on board memory.
 
 
 =item B<draw_solid_rect( $x1, $y1, $x2, $y2)>
